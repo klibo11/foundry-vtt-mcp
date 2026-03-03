@@ -429,7 +429,7 @@ export function createToolHandler(foundryClient: FoundryClient) {
 
     if (name === "get_world") {
       try {
-        const excludeCollections = DOCUMENT_TYPES.map((config) => config.collection);
+        const excludeCollections = [...DOCUMENT_TYPES.map((config) => config.collection), ...[ 'packs', 'model', 'template', 'system' ]];
         const world = await foundryClient.getWorld(excludeCollections);
         return successResponse(world);
       } catch (error) {

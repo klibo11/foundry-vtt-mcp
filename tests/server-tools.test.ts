@@ -122,7 +122,7 @@ describe("server tools", () => {
     const response = await handler({ params: { name: "get_world" } });
 
     expect(client.getWorld).toHaveBeenCalledWith(
-      DOCUMENT_TYPES.map((config) => config.collection)
+      [...DOCUMENT_TYPES.map((config) => config.collection), ...[ 'packs', 'model', 'template', 'system' ]]
     );
     expect((response as any).isError).toBeUndefined();
   });
