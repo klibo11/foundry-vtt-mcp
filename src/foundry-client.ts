@@ -41,6 +41,15 @@ interface FoundryConnection {
   ws: WebSocket;
 }
 
+interface SlimModule {
+  id: unknown;
+  title?: unknown;
+  description?: unknown;
+  authors?: unknown[];
+  url?: unknown;
+  version?: unknown;
+}
+
 export class FoundryClient {
   private connection: FoundryConnection | null = null;
   private reconnecting = false;
@@ -868,6 +877,18 @@ export class FoundryClient {
    */
   async getWorld(excludeCollections: string[]): Promise<Record<string, unknown>> {
     const worldData = await this.requestWorldData();
+
+    if (Array.isArray(worldData.modules)) {
+      worldData.modules = (worldData.modules as Record<string, unknown>[]).map((item): SlimModule => ({
+        id: item.id,
+        title: item.title,
+        description: item.description,
+        authors: item.authors as unknown[] | undefined,
+        url: item.url,
+        version: item.version,
+      }));
+    }
+
     return filterWorldData(worldData, excludeCollections);
   }
 
