@@ -8,6 +8,25 @@ export function isSessionEvent(message: string): boolean {
   return message.includes('["session",');
 }
 
+/** Parsed Foundry game session payload from a `session` socket event. */
+export function parseSessionPayload(
+  message: string
+): { sessionId?: string; userId?: string } | null {
+  if (!isSessionEvent(message)) {
+    return null;
+  }
+  try {
+    const payload = JSON.parse(message.slice(2)) as unknown[];
+    const session = payload[1];
+    if (session && typeof session === "object") {
+      return session as { sessionId?: string; userId?: string };
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
 export function parseWorldResponseMessage(message: string): {
   matched: boolean;
   data?: Record<string, unknown>;

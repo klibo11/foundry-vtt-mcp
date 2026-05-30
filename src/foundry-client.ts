@@ -24,6 +24,7 @@ import {
   isEngineHandshake,
   isSessionEvent,
   parseAckMessage,
+  parseSessionPayload,
   parseWorldResponseMessage,
   WORLD_REQUEST_MESSAGE,
 } from "./core/socket-protocol.js";
@@ -202,10 +203,16 @@ export class FoundryClient {
    */
   private connectWebSocket(hostname: string, sessionId: string): Promise<WebSocket> {
     return new Promise((resolve, reject) => {
-      const wsUrl = `wss://${hostname}/socket.io/?session=${sessionId}&EIO=4&transport=websocket`;
+      // Foundry v14 binds the socket to the logged-in user via the session
+      // cookie on the WebSocket upgrade — not the ?session= query param alone.
+      const wsUrl = `wss://${hostname}/socket.io/?EIO=4&transport=websocket`;
       this.logger.error(`[FoundryClient] Connecting to WebSocket: ${wsUrl}`);
 
-      const ws = new this.WebSocketCtor(wsUrl);
+      const ws = new this.WebSocketCtor(wsUrl, {
+        headers: {
+          Cookie: `session=${sessionId}`,
+        },
+      });
 
       ws.on("open", () => {
       this.logger.error("[FoundryClient] WebSocket connection established");
@@ -225,6 +232,33 @@ export class FoundryClient {
       ws.on("open", () => {
         this.clearTimeoutFn(timeout);
       });
+    });
+  }
+
+  /**
+   * Wait until Foundry assigns an in-world session (non-null session event).
+   */
+  private waitForGameSession(ws: WebSocket): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const timeout = this.setTimeoutFn(() => {
+        ws.off("message", handler);
+        reject(new Error("Timeout waiting for game session (30s)"));
+      }, 30000);
+
+      const handler = (data: WebSocket.Data) => {
+        const message = data.toString();
+        const session = parseSessionPayload(message);
+        if (session?.sessionId) {
+          this.clearTimeoutFn(timeout);
+          ws.off("message", handler);
+          this.logger.error(
+            `[FoundryClient] Game session ready for user ${session.userId}`
+          );
+          resolve();
+        }
+      };
+
+      ws.on("message", handler);
     });
   }
 
@@ -250,6 +284,11 @@ export class FoundryClient {
       this.wsLogger.logInbound(message);
       this.logger.error(`[FoundryClient] WebSocket message: ${message}`);
 
+      if (message === "2") {
+        this.sendWebSocketMessage(ws, "3");
+        return;
+      }
+
       if (isEngineHandshake(message)) {
         this.logger.error("[FoundryClient] Received Engine.IO handshake, sending Socket.IO connect");
         this.sendWebSocketMessage(ws, "40");
@@ -257,7 +296,12 @@ export class FoundryClient {
       }
 
       if (isSessionEvent(message)) {
-        this.logger.error("[FoundryClient] Received session event, connection ready");
+        const session = parseSessionPayload(message);
+        if (session?.sessionId) {
+          this.logger.error("[FoundryClient] Received session event, connection ready");
+        } else {
+          this.logger.error("[FoundryClient] Received session event (awaiting login binding)");
+        }
         return;
       }
     });
@@ -280,6 +324,7 @@ export class FoundryClient {
       if (success) {
         const ws = await this.connectWebSocket(hostname, sessionId);
         this.setupWebSocketHandlers(ws);
+        await this.waitForGameSession(ws);
         this.connection.ws = ws;
         this.logger.error("[FoundryClient] Reconnection successful");
       } else {
@@ -293,6 +338,7 @@ export class FoundryClient {
         if (newSuccess) {
           const ws = await this.connectWebSocket(hostname, newSessionId);
           this.setupWebSocketHandlers(ws);
+          await this.waitForGameSession(ws);
           this.connection.sessionId = newSessionId;
           this.connection.ws = ws;
           this.logger.error("[FoundryClient] Reconnection with new session successful");
@@ -339,6 +385,7 @@ export class FoundryClient {
         // Step 3: Establish WebSocket connection
         const ws = await this.connectWebSocket(hostname, sessionId);
         this.setupWebSocketHandlers(ws);
+        await this.waitForGameSession(ws);
 
         // Store the successful connection
         this.connection = {
@@ -399,6 +446,7 @@ export class FoundryClient {
 
     const ws = await this.connectWebSocket(hostname, sessionId);
     this.setupWebSocketHandlers(ws);
+    await this.waitForGameSession(ws);
 
     this.connection = {
       hostname,
