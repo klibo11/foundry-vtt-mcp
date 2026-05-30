@@ -1,5 +1,7 @@
 # FoundryMCP
 
+> **Fork note:** Contains a Foundry v14 WebSocket session fix pending upstream merge in [TheStranjer/foundry-vtt-mcp](https://github.com/TheStranjer/foundry-vtt-mcp). See commit `470c07f` or the compare link in the parent repo's `foundry-vtt-mcp-v14-issue-draft.md`.
+
 A lightweight MCP (Model Context Protocol) server for FoundryVTT that communicates directly via WebSockets.
 
 ## Why This Server?
