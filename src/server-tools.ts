@@ -327,6 +327,71 @@ export const deleteCompendiumTool = {
   },
 };
 
+export const getCompendiumIndexTool = {
+  name: "get_compendium_index",
+  description: `List all documents in a compendium pack. Returns the compendium index — typically _id, name, and type fields. Use get_compendium_item to retrieve full document data for a specific entry.`,
+  inputSchema: {
+    type: "object",
+    properties: {
+      pack: {
+        type: "string",
+        description: `The compendium pack ID (e.g., "dnd-players-handbook.spells", "world.my-compendium").`,
+      },
+      type: {
+        type: "string",
+        description: `The document type in the compendium. Valid types: "Actor", "Item", "Scene", "JournalEntry", "Macro", "Playlist", "RollTable", "Cards", "Adventure". Must match Foundry's internal document class name (case-sensitive).`,
+      },
+      max_length: {
+        type: "integer",
+        description: `Maximum number of bytes the JSON response can be. Documents are removed one by one until under this limit. If 0, undefined, or null, there is no limit.`,
+      },
+      requested_fields: {
+        type: "array",
+        items: { type: "string" },
+        description: `Array of field names to include in each document. Always includes _id and name. If empty, undefined, or null, all fields are included.`,
+      },
+      where: {
+        type: "object",
+        additionalProperties: true,
+        description: `Filter results by field values (AND logic). Example: {"type": "spell"} returns only spells.`,
+      },
+    },
+    required: ["pack", "type"],
+  },
+};
+
+export const getCompendiumItemTool = {
+  name: "get_compendium_item",
+  description: `Get a single document from a compendium pack by _id or name. Returns the full document data. Use get_compendium_index first to discover available _id values.`,
+  inputSchema: {
+    type: "object",
+    properties: {
+      pack: {
+        type: "string",
+        description: `The compendium pack ID (e.g., "dnd-players-handbook.spells", "world.my-compendium").`,
+      },
+      type: {
+        type: "string",
+        description: `The document type in the compendium. Valid types: "Actor", "Item", "Scene", "JournalEntry", "Macro", "Playlist", "RollTable", "Cards", "Adventure". Must match Foundry's internal document class name (case-sensitive).`,
+      },
+      _id: {
+        type: "string",
+        description: `The _id of the document in the compendium (from get_compendium_index).`,
+      },
+      name: {
+        type: "string",
+        description: `The name of the document in the compendium.`,
+      },
+      requested_fields: {
+        type: "array",
+        items: { type: "string" },
+        description: `Array of field names to include. Always includes _id and name. If empty, undefined, or null, all fields are included.`,
+      },
+    },
+    required: ["pack", "type"],
+  },
+};
+
 export function createToolDefinitions() {
   return [
     ...DOCUMENT_TYPES.flatMap((config) => [
@@ -343,6 +408,8 @@ export function createToolDefinitions() {
     browseFilesTool,
     createCompendiumTool,
     deleteCompendiumTool,
+    getCompendiumIndexTool,
+    getCompendiumItemTool,
   ];
 }
 
@@ -632,6 +699,74 @@ export function createToolHandler(foundryClient: FoundryClient) {
       } catch (error) {
         return errorResponse(
           `Error deleting compendium: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+    }
+
+    if (name === "get_compendium_index") {
+      try {
+        const pack = args?.pack as string | undefined;
+        const type = args?.type as string | undefined;
+        const maxLength = args?.max_length as number | undefined;
+        const requestedFields = args?.requested_fields as string[] | undefined;
+        const where = args?.where as Record<string, unknown> | undefined;
+
+        if (!pack) {
+          return errorResponse("Error: 'pack' is required");
+        }
+        if (!type) {
+          return errorResponse("Error: 'type' is required");
+        }
+
+        const docs = await foundryClient.getCompendiumDocuments(type, pack, {
+          maxLength: maxLength || null,
+          requestedFields: requestedFields || null,
+          where: where || null,
+        });
+
+        return successResponse(docs);
+      } catch (error) {
+        return errorResponse(
+          `Error fetching compendium index: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+    }
+
+    if (name === "get_compendium_item") {
+      try {
+        const pack = args?.pack as string | undefined;
+        const type = args?.type as string | undefined;
+        const _id = args?._id as string | undefined;
+        const docName = args?.name as string | undefined;
+        const requestedFields = args?.requested_fields as string[] | undefined;
+
+        if (!pack) {
+          return errorResponse("Error: 'pack' is required");
+        }
+        if (!type) {
+          return errorResponse("Error: 'type' is required");
+        }
+        if (!_id && !docName) {
+          return errorResponse("Error: Must provide at least one of: _id, name");
+        }
+
+        const doc = await foundryClient.getCompendiumDocument(
+          type,
+          pack,
+          { _id, name: docName },
+          { requestedFields: requestedFields || null }
+        );
+
+        if (!doc) {
+          return {
+            content: [{ type: "text", text: "Compendium item not found" }],
+          };
+        }
+
+        return successResponse(doc);
+      } catch (error) {
+        return errorResponse(
+          `Error fetching compendium item: ${error instanceof Error ? error.message : String(error)}`
         );
       }
     }

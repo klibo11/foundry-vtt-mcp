@@ -17,11 +17,17 @@ describe("server tools", () => {
     const tools = createToolDefinitions();
     const createCompendium = tools.find((tool) => tool.name === "create_compendium");
     const deleteCompendium = tools.find((tool) => tool.name === "delete_compendium");
+    const getCompendiumIndex = tools.find((tool) => tool.name === "get_compendium_index");
+    const getCompendiumItem = tools.find((tool) => tool.name === "get_compendium_item");
     expect(createCompendium).toBeTruthy();
     expect(deleteCompendium).toBeTruthy();
+    expect(getCompendiumIndex).toBeTruthy();
+    expect(getCompendiumItem).toBeTruthy();
     expect(createCompendium?.inputSchema.required).toContain("label");
     expect(createCompendium?.inputSchema.required).toContain("type");
     expect(deleteCompendium?.inputSchema.required).toContain("name");
+    expect(getCompendiumIndex?.inputSchema.required).toEqual(["pack", "type"]);
+    expect(getCompendiumItem?.inputSchema.required).toEqual(["pack", "type"]);
   });
 
   test("document tools include pack parameter", () => {
@@ -740,6 +746,121 @@ describe("server tools", () => {
 
       expect((response as any).isError).toBe(true);
       expect(response.content[0].text).toContain("Compendium not found");
+    });
+  });
+
+  describe("get_compendium_index", () => {
+    test("requires pack and type", async () => {
+      const client = { isConnected: () => true } as any;
+      const handler = createToolHandler(client);
+
+      const missingPack = await handler({
+        params: { name: "get_compendium_index", arguments: { type: "Item" } },
+      });
+      expect((missingPack as any).isError).toBe(true);
+      expect(missingPack.content[0].text).toContain("'pack' is required");
+
+      const missingType = await handler({
+        params: { name: "get_compendium_index", arguments: { pack: "dnd-players-handbook.spells" } },
+      });
+      expect((missingType as any).isError).toBe(true);
+      expect(missingType.content[0].text).toContain("'type' is required");
+    });
+
+    test("executes successfully", async () => {
+      const client = {
+        isConnected: () => true,
+        getCompendiumDocuments: jest.fn().mockResolvedValue([
+          { _id: "phbsplFireball", name: "Fireball" },
+        ]),
+      } as any;
+
+      const handler = createToolHandler(client);
+      const response = await handler({
+        params: {
+          name: "get_compendium_index",
+          arguments: {
+            pack: "dnd-players-handbook.spells",
+            type: "Item",
+            where: { type: "spell" },
+          },
+        },
+      });
+
+      expect(client.getCompendiumDocuments).toHaveBeenCalledWith(
+        "Item",
+        "dnd-players-handbook.spells",
+        expect.objectContaining({ where: { type: "spell" } })
+      );
+      expect(JSON.parse(response.content[0].text)).toHaveLength(1);
+    });
+  });
+
+  describe("get_compendium_item", () => {
+    test("requires pack, type, and identifier", async () => {
+      const client = { isConnected: () => true } as any;
+      const handler = createToolHandler(client);
+
+      const response = await handler({
+        params: {
+          name: "get_compendium_item",
+          arguments: { pack: "dnd-players-handbook.spells", type: "Item" },
+        },
+      });
+
+      expect((response as any).isError).toBe(true);
+      expect(response.content[0].text).toContain("Must provide at least one of: _id, name");
+    });
+
+    test("executes successfully", async () => {
+      const client = {
+        isConnected: () => true,
+        getCompendiumDocument: jest.fn().mockResolvedValue({
+          _id: "phbsplFireball",
+          name: "Fireball",
+        }),
+      } as any;
+
+      const handler = createToolHandler(client);
+      const response = await handler({
+        params: {
+          name: "get_compendium_item",
+          arguments: {
+            pack: "dnd-players-handbook.spells",
+            type: "Item",
+            _id: "phbsplFireball",
+          },
+        },
+      });
+
+      expect(client.getCompendiumDocument).toHaveBeenCalledWith(
+        "Item",
+        "dnd-players-handbook.spells",
+        { _id: "phbsplFireball", name: undefined },
+        expect.any(Object)
+      );
+      expect(JSON.parse(response.content[0].text).name).toBe("Fireball");
+    });
+
+    test("returns not found message", async () => {
+      const client = {
+        isConnected: () => true,
+        getCompendiumDocument: jest.fn().mockResolvedValue(null),
+      } as any;
+
+      const handler = createToolHandler(client);
+      const response = await handler({
+        params: {
+          name: "get_compendium_item",
+          arguments: {
+            pack: "dnd-players-handbook.spells",
+            type: "Item",
+            _id: "missing",
+          },
+        },
+      });
+
+      expect(response.content[0].text).toBe("Compendium item not found");
     });
   });
 });

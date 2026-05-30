@@ -13,6 +13,8 @@ description: Reference for FoundryVTT compendium management and file operations.
 |------|---------|
 | `create_compendium` | Create a new Compendium pack |
 | `delete_compendium` | Delete a Compendium pack |
+| `get_compendium_index` | List all documents in a compendium pack |
+| `get_compendium_item` | Get a single document from a compendium pack |
 
 ### `create_compendium`
 
@@ -172,6 +174,11 @@ Use `create_document` with the `pack` field in the operation to create documents
 
 The `pack` field specifies which compendium to add the document to. Without it, documents are created in the world.
 
+**Assigned `_id` on create:** Foundry ignores any `_id` you put in the create payload
+and returns a new 16-character id in `result[]._id`. When creating documents that
+reference other compendium items by UUID, create dependencies first and use the ids
+returned in the create response.
+
 ### Updating Documents in a Compendium
 
 Use `modify_document` with the `pack` field:
@@ -203,6 +210,40 @@ Use `delete_document` with the `pack` field:
 
 - The `pack` field tells Foundry to operate on a compendium instead of the world
 - Compendium documents don't appear in `get_actors`, `get_items`, etc. (those only show world documents)
+- Use `get_compendium_index` and `get_compendium_item` to read compendium content directly
 - All documents in a compendium must be of the same type (specified when creating the compendium)
 - World compendia use the `world.` prefix
 - Deleting a compendium removes all its documents permanently
+
+### Reading Compendium Content
+
+Use `get_compendium_index` to list entries in a pack, then `get_compendium_item` to fetch full document data.
+
+**List compendium index:**
+```json
+{
+  "tool": "get_compendium_index",
+  "pack": "dnd-players-handbook.spells",
+  "type": "Item"
+}
+```
+
+**Get a specific compendium document:**
+```json
+{
+  "tool": "get_compendium_item",
+  "pack": "dnd-players-handbook.spells",
+  "type": "Item",
+  "_id": "phbsplFireball"
+}
+```
+
+You can also look up by name:
+```json
+{
+  "tool": "get_compendium_item",
+  "pack": "dnd-players-handbook.spells",
+  "type": "Item",
+  "name": "Fireball"
+}
+```

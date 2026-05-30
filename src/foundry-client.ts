@@ -561,7 +561,7 @@ export class FoundryClient {
 
   private async sendModifyDocumentRequest(
     type: string,
-    action: "update" | "create" | "delete",
+    action: "update" | "create" | "delete" | "get",
     operation: Record<string, unknown>,
     timeoutMessage: string,
     isMatch: (responseData: Record<string, unknown>) => boolean,
@@ -830,6 +830,113 @@ export class FoundryClient {
    * @param options.pack - Optional compendium pack ID to delete documents from a compendium
    * @returns The result from Foundry containing the deleted document IDs
    */
+  /** Build a compendium get operation matching Foundry's DatabaseGetOperation wire format. */
+  private buildCompendiumGetOperation(
+    type: string,
+    pack: string,
+    query: Record<string, unknown>
+  ): Record<string, unknown> {
+    return {
+      query,
+      pack,
+      action: "get",
+      documentName: type,
+      parent: null,
+      modifiedTime: this.now(),
+      broadcast: false,
+    };
+  }
+
+  /**
+   * List documents in a compendium pack (index).
+   * @param type - Foundry document class name (e.g. "Item", "Actor", "JournalEntry")
+   * @param pack - Compendium pack ID (e.g. "dnd-players-handbook.spells")
+   */
+  async getCompendiumDocuments(
+    type: string,
+    pack: string,
+    options?: {
+      maxLength?: number | null;
+      requestedFields?: string[] | null;
+      where?: Record<string, unknown> | null;
+    }
+  ): Promise<Record<string, unknown>[]> {
+    const maxLength = options?.maxLength ?? 0;
+    const requestedFields = options?.requestedFields ?? null;
+    const where = options?.where ?? null;
+
+    const operation = this.buildCompendiumGetOperation(type, pack, {});
+
+    const response = await this.sendModifyDocumentRequest(
+      type,
+      "get",
+      operation,
+      `Timeout waiting for compendium index (30s) for ${pack}`,
+      (responseData) =>
+        responseData.action === "get" && Array.isArray(responseData.result),
+      "getCompendiumDocuments"
+    );
+
+    if (response.error) {
+      throw new Error(String(response.error));
+    }
+
+    let docs = (response.result as Record<string, unknown>[]) || [];
+    docs = this.filterDocumentsByWhere(docs, where);
+    docs = docs.map((doc) => filterDocumentFields(doc, requestedFields));
+    docs = truncateDocuments(docs, maxLength);
+
+    return docs;
+  }
+
+  /**
+   * Get a single document from a compendium pack by _id or name.
+   * @param type - Foundry document class name (e.g. "Item", "Actor", "JournalEntry")
+   * @param pack - Compendium pack ID (e.g. "dnd-players-handbook.spells")
+   */
+  async getCompendiumDocument(
+    type: string,
+    pack: string,
+    identifier: { _id?: string; name?: string },
+    options?: {
+      requestedFields?: string[] | null;
+    }
+  ): Promise<Record<string, unknown> | null> {
+    const requestedFields = options?.requestedFields ?? null;
+
+    const query: Record<string, unknown> = {};
+    if (identifier._id) {
+      query._id = identifier._id;
+    } else if (identifier.name) {
+      query.name = identifier.name;
+    } else {
+      throw new Error("Must provide _id or name");
+    }
+
+    const operation = this.buildCompendiumGetOperation(type, pack, query);
+
+    const response = await this.sendModifyDocumentRequest(
+      type,
+      "get",
+      operation,
+      `Timeout waiting for compendium document (30s) for ${pack}`,
+      (responseData) =>
+        responseData.action === "get" && Array.isArray(responseData.result),
+      "getCompendiumDocument"
+    );
+
+    if (response.error) {
+      throw new Error(String(response.error));
+    }
+
+    const docs = (response.result as Record<string, unknown>[]) || [];
+    if (docs.length === 0) {
+      return null;
+    }
+
+    return filterDocumentFields(docs[0], requestedFields);
+  }
+
   async deleteDocument(
     type: string,
     ids: string[],

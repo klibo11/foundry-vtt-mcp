@@ -487,6 +487,88 @@ describe("FoundryClient", () => {
     );
   });
 
+  test("getCompendiumDocuments builds get operation and filters results", async () => {
+    const { client } = createClient({ now: () => 1000, WebSocketCtor: TestWebSocket });
+    jest.spyOn(client as any, "sendModifyDocumentRequest").mockResolvedValue({
+      action: "get",
+      result: [
+        { _id: "1", name: "Fireball", type: "spell" },
+        { _id: "2", name: "Shield", type: "spell" },
+        { _id: "3", name: "Longsword", type: "weapon" },
+      ],
+    });
+
+    const docs = await client.getCompendiumDocuments("Item", "dnd-players-handbook.spells", {
+      where: { type: "weapon" },
+      requestedFields: ["type"],
+    });
+
+    expect((client as any).sendModifyDocumentRequest).toHaveBeenCalledWith(
+      "Item",
+      "get",
+      expect.objectContaining({
+        query: {},
+        pack: "dnd-players-handbook.spells",
+        action: "get",
+        documentName: "Item",
+        parent: null,
+        modifiedTime: 1000,
+        broadcast: false,
+      }),
+      expect.any(String),
+      expect.any(Function),
+      "getCompendiumDocuments"
+    );
+    expect(docs).toEqual([{ _id: "3", name: "Longsword", type: "weapon" }]);
+  });
+
+  test("getCompendiumDocument builds query by _id", async () => {
+    const { client } = createClient({ now: () => 2000, WebSocketCtor: TestWebSocket });
+    jest.spyOn(client as any, "sendModifyDocumentRequest").mockResolvedValue({
+      action: "get",
+      result: [{ _id: "phbsplFireball", name: "Fireball", system: {} }],
+    });
+
+    const doc = await client.getCompendiumDocument(
+      "Item",
+      "dnd-players-handbook.spells",
+      { _id: "phbsplFireball" }
+    );
+
+    expect((client as any).sendModifyDocumentRequest).toHaveBeenCalledWith(
+      "Item",
+      "get",
+      expect.objectContaining({
+        query: { _id: "phbsplFireball" },
+        pack: "dnd-players-handbook.spells",
+      }),
+      expect.any(String),
+      expect.any(Function),
+      "getCompendiumDocument"
+    );
+    expect(doc).toEqual({ _id: "phbsplFireball", name: "Fireball", system: {} });
+  });
+
+  test("getCompendiumDocument returns null when not found", async () => {
+    const { client } = createClient({ WebSocketCtor: TestWebSocket });
+    jest.spyOn(client as any, "sendModifyDocumentRequest").mockResolvedValue({
+      action: "get",
+      result: [],
+    });
+
+    await expect(
+      client.getCompendiumDocument("Item", "dnd-players-handbook.spells", { _id: "missing" })
+    ).resolves.toBeNull();
+  });
+
+  test("getCompendiumDocument throws without identifier", async () => {
+    const { client } = createClient({ WebSocketCtor: TestWebSocket });
+
+    await expect(
+      client.getCompendiumDocument("Item", "dnd-players-handbook.spells", {})
+    ).rejects.toThrow("Must provide _id or name");
+  });
+
   test("requestWorldData resolves on world message", async () => {
     const { client } = createClient({ WebSocketCtor: TestWebSocket });
     const ws = new TestWebSocket("ws://host");
